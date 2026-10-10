@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Preserve binary `&` after natural literals and keep trailing comments outside
+  natural-valued body fields. Distinguish literal and glued-successor tokens
+  without a trailing zero-width natural token.
+- Preserve following declarations after damaged parallel-let values and clean
+  terminal values after invalid call/index assignment targets. Expose actual
+  numeric lexemes during native recovery without admitting expression patterns
+  or adding body-selector state. Add LF/CRLF field/capture and break/repair checks.
+- Strengthen mutation regressions for natural operator spacing and recovered
+  match-frame serialization with an independent expected-state oracle.
+
 - Restore declaration/arm recovery after malformed case headers, unfinished
   GPU prefixes and missing function names with GPU bodies. Recognize an
   immediately following decorated definition after an invalid `do`.
@@ -12,6 +22,12 @@
 - Correct GPU migration guidance: `gpu_call` changes from a named leaf to a
   composite node, not from a combined anonymous token.
 
+- Reject non-pattern assignment and case terms, destructuring in typed/parallel
+  lets, and law templates after ordinary clauses. Preserve recursive patterns,
+  empty-call and zero-successor identities, optional commas, named CST nodes
+  and following declarations through repair.
+  Add LF/CRLF regressions using all ten affected official malformed fixtures;
+  update the reviewed rejection baseline without exempting new failures.
 - Preserve following top-level declarations after invalid nested `do` bodies
   by closing bounded scanner scopes before restarting declaration recovery.
   Add LF/CRLF break/repair regressions; keep native syntax errors and existing

@@ -6,7 +6,7 @@
 /// <reference types="tree-sitter-cli/dsl" />
 // @ts-check
 
-const args = rule => repeat(seq(rule, optional(',')));
+const args = (rule, separator = ',') => repeat(seq(rule, optional(separator)));
 
 export default grammar({
   name: 'bend2',
@@ -26,10 +26,18 @@ export default grammar({
     $._string_start, $._string_newline,
     $._lt, $._glued_lt, $._glued_comparison_end, $._error_sentinel, $._gpu_open,
     $._gpu_modifier, $._case_body_start, $._decorator_start, $._at, $._unsafe_keyword,
+    $._pattern_separator, $._successor_natural, $._zero_natural, $._natural_plus,
   ],
+  inline: $ => [$._natural],
   conflicts: $ => [
-    [$.body, $.binding],
     [$.type_application, $._atom],
+    [$._destructuring_pattern, $._atom],
+    [$._name_pattern, $._atom],
+    [$._pattern_list, $.list_expression],
+    [$._pattern_constructor, $.constructor_expression],
+    [$._named_binding, $._name_parenthesized],
+    [$._pattern, $._name_parenthesized],
+    [$._pattern, $._pattern_parenthesized],
   ],
   rules: {
     source_file: $ => seq(repeat($.import_statement), repeat($._declaration)),
@@ -58,20 +66,26 @@ export default grammar({
       optional(field('quantity', choice('+', '-'))), field('name', $.identifier), ':', field('type', $._expression))),
     constructor_definition: $ => seq(field('name', $.identifier), '{', args($.type_parameter), '}'),
     law_definition: $ => seq(choice('law', alias($._law_keyword, 'law')),
-      field('name', alias($._declaration_name, $.identifier)), ':', repeat($.law_clause),
+      field('name', alias($._declaration_name, $.identifier)), ':',
+      repeat(alias($._law_template_clause, $.law_clause)), repeat($.law_clause),
       field('body', $._block)),
-    law_clause: $ => seq(choice(seq('for', optional(field('quantity', choice('+', '-', '~')))), 'exs'),
+    _law_template_clause: $ => seq('for', field('quantity', '~'),
+      field('name', $.identifier), ':', field('type', $._expression), optional(seq('where', field('constraint', $._expression)))),
+    law_clause: $ => seq(choice(seq('for', optional(field('quantity', choice('+', '-')))), 'exs'),
       field('name', $.identifier), ':', field('type', $._expression), optional(seq('where', field('constraint', $._expression)))),
 
     // Bodies terminate with a value or match; lets own the rest of the body.
     _block: $ => seq($._block_start, $.body, $._body_end),
     body: $ => choice($.let_expression, $.parallel_let_expression, $.match_expression, $.write_sequence, $._expression),
-    binding: $ => seq(optional('-'), $._expression),
-    let_expression: $ => prec.right(seq(field('pattern', $.binding),
-      optional(seq(':', field('type', $._expression))), '=', field('value', $._expression),
-      optional(';'), field('body', $.body))),
-    parallel_let_expression: $ => seq(field('pattern', $.binding),
-      $._parallel_start, field('pattern', $.binding), repeat(seq($._parallel, field('pattern', $.binding))), '=',
+    binding: $ => choice($._pattern, seq('-', $.identifier)),
+    _named_binding: $ => choice($._name_pattern, seq('-', $.identifier)),
+    let_expression: $ => prec.right(seq(choice(
+      seq(field('pattern', $.binding), '='),
+      seq(field('pattern', alias($._named_binding, $.binding)), ':', field('type', $._expression), '=')),
+      field('value', $._expression), optional(';'), field('body', $.body))),
+    parallel_let_expression: $ => seq(field('pattern', alias($._named_binding, $.binding)),
+      $._parallel_start, field('pattern', alias($._named_binding, $.binding)),
+      repeat(seq($._parallel, field('pattern', alias($._named_binding, $.binding)))), '=',
       repeat1(seq($._parallel_value, field('value', $._expression))), $._parallel_end,
       optional(';'), field('body', $.body)),
     write_sequence: $ => seq(field('write', alias($._statement_write, $.array_write)),
@@ -84,7 +98,50 @@ export default grammar({
     _match_header: $ => seq('match', repeat1(seq(field('value', $._expression), optional(','))), ':'),
     case_clause: $ => seq($._case_header, $._case_body_start, field('body', $.body), $._body_end),
     _case_header: $ => seq(choice('case', alias($._case, 'case')),
-      repeat1(seq(field('pattern', $._expression), optional(','))), ':'),
+      patternSep1($, field('pattern', $._pattern)), ':'),
+
+    // parse_patt accepts variables, recursive constructors, and literals.
+    // Surface sugars retain expression CST nodes, but their children must also
+    // be patterns. Constructor resolution, arity, and literal limits belong to
+    // the compiler rather than this context-free syntax.
+    _pattern: $ => choice($._name_pattern, $._destructuring_pattern),
+    _name_pattern: $ => choice($.identifier,
+      alias($._pattern_reusable, $.reusable_expression),
+      alias($._name_parenthesized, $.parenthesized_expression),
+      alias($._name_call, $.call_expression),
+      alias($._name_successor, $.natural_successor)),
+    _pattern_reusable: $ => prec(12, seq('+', $._name_pattern)),
+    _name_parenthesized: $ => seq('(', $._block_start,
+      field('body', alias($._name_pattern, $.body)),
+      optional(seq(':', field('type', $._expression))), $._body_end, ')'),
+    _name_call: $ => prec.left(14, seq(field('function', $._name_pattern),
+      field('arguments', alias($._empty_arguments, $.arguments)))),
+    _empty_arguments: $ => seq(alias($._call_open, '('), ')'),
+    _name_successor: $ => prec.right(-1, seq(alias($._zero_natural, $.natural),
+      alias($._natural_plus, '+'), field('value', $._name_pattern))),
+    _natural: $ => choice($.natural, alias($._zero_natural, $.natural), alias($._successor_natural, $.natural)),
+    _destructuring_pattern: $ => choice($.integer, $.natural, $.float, $.character, $.string,
+      alias($._pattern_constructor, $.constructor_expression),
+      alias($._pattern_successor, $.natural_successor),
+      alias($._pattern_parenthesized, $.parenthesized_expression),
+      alias($._pattern_tuple, $.tuple_expression),
+      alias($._pattern_list, $.list_expression),
+      alias($._pattern_cons, $.binary_expression),
+      alias($._pattern_call, $.call_expression)),
+    _pattern_constructor: $ => seq(field('name', $.identifier), token.immediate('{'), optional(patternSep1($, $._pattern)), '}'),
+    _pattern_successor: $ => prec.right(-1, choice(
+      seq(alias($._successor_natural, $.natural), alias($._natural_plus, '+'), field('value', $._pattern)),
+      seq(alias($._zero_natural, $.natural), alias($._natural_plus, '+'), field('value', $._destructuring_pattern)))),
+    _pattern_call: $ => prec.left(14, seq(field('function', $._destructuring_pattern),
+      field('arguments', alias($._empty_arguments, $.arguments)))),
+    _pattern_parenthesized: $ => seq('(', $._block_start,
+      field('body', alias($._destructuring_pattern, $.body)),
+      optional(seq(':', field('type', $._expression))), $._body_end, ')'),
+    _pattern_tuple: $ => seq('(', $._block_start,
+      field('element', alias($._pattern, $.body)), $._body_end, ',',
+      commaSep1($._pattern), optional(seq(':', field('type', $._expression))), ')'),
+    _pattern_list: $ => seq('[', optional(patternSep1($, $._pattern)), ']'),
+    _pattern_cons: $ => prec.right(5, seq(field('left', $._pattern), field('operator', '<>'), field('right', $._pattern))),
 
     _expression: $ => choice($._atom, $.binary_expression, $.lambda_expression),
     _domain_expression: $ => choice($._atom, alias($._domain_binary, $.binary_expression)),
@@ -94,7 +151,8 @@ export default grammar({
     _generic_binary: $ => binary($, $._generic_argument, 5),
     _write_binary: $ => binary($, $._write_value, 2),
     _atom: $ => choice(
-      $.identifier, $.builtin_type, $.kind_expression, $.quantity, $.integer, $.natural, $.float,
+      $.identifier, $.builtin_type, $.kind_expression, $.quantity, $.integer,
+      $._natural, $.float,
       $.natural_successor, $.character, $.string, $.hole, $.constructor_expression,
       $.type_application, alias($._glued_comparison, $.binary_expression),
       $.call_expression, $.index_expression, $.array_write,
@@ -106,14 +164,15 @@ export default grammar({
     builtin_type: $ => choice('Type', 'Data', 'Quant'),
     kind_expression: $ => seq('Kind', '(', $._expression, ')'),
     quantity: $ => token(seq('&', /[012]/)),
-    natural_successor: $ => prec.right(-1, seq($.natural, token.immediate('+'), field('value', $._expression))),
+    natural_successor: $ => prec.right(-1, seq($._natural, alias($._natural_plus, '+'), field('value', $._expression))),
     character: $ => seq("'", choice($.escape_sequence, token.immediate(prec(1, /[^\\]/u))), token.immediate("'")),
     string: $ => seq(alias($._string_start, '"'),
       repeat(choice($.escape_sequence, $.string_content, alias($._string_newline, $.string_content))), token.immediate('"')),
     string_content: $ => token.immediate(prec(1, /[^"\\\n]+/)),
     escape_sequence: $ => token.immediate(/\\([ntr0\\'"]|[uU]\{[0-9a-fA-F]{1,8}\})/),
     hole: $ => seq('?', field('name', $.identifier)),
-    constructor_expression: $ => seq(field('name', $.identifier), token.immediate('{'), args($._expression), '}'),
+    constructor_expression: $ => seq(field('name', $.identifier), token.immediate('{'),
+      args($._expression, choice(',', $._pattern_separator)), '}'),
     // Glued comparisons and postfix operations bind to an atomic head. A
     // general expression here lets recovery consume a forbidden type operator
     // while waiting for another postfix token, then discard the declaration.
@@ -148,7 +207,7 @@ export default grammar({
       optional(seq(':', field('type', $._expression))), $._body_end, ')'),
     tuple_expression: $ => seq('(', $._block_start, field('element', $.body), $._body_end, ',',
       commaSep1($._expression), optional(seq(':', field('type', $._expression))), ')'),
-    list_expression: $ => seq('[', args($._expression), ']'),
+    list_expression: $ => seq('[', args($._expression, choice(',', $._pattern_separator)), ']'),
     array_expression: $ => prec(12, seq('[', field('value', $._expression), ':', field('type', $._atom),
       choice('*', '^'), field('size', $._expression), ']')),
     // Reduce the header before entering its body so recovery need not search
@@ -166,6 +225,12 @@ export default grammar({
 });
 
 function commaSep1(rule) { return seq(rule, repeat(seq(',', rule))); }
+
+// Optional commas do not turn same-line postfix calls or indexes into another
+// pattern. The scanner recognizes the same term boundary as parse_term_ops.
+function patternSep1($, rule) {
+  return seq(rule, repeat(seq(choice(',', $._pattern_separator), rule)), optional(','));
+}
 
 function binary($, operand, minimum) {
   return choice(...[

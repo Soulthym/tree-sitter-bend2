@@ -209,6 +209,33 @@ for _, declaration in ipairs({ 'type Extra is Data: Extra{}', 'law extra: U32' }
   review_case('guard decorator on wrong declaration ' .. declaration,
     invalid_do .. '\n@unsafe ' .. declaration, valid_do .. '\n' .. declaration)
 end
+-- PR #2: a malformed parallel value must not eat an immediately following
+-- definition, including name forms admitted by zero/empty-call identities.
+for _, pattern in ipairs({
+  'x y', '+x y', '(x) y', '(x : U32) y', 'x() y', 'x()() y',
+  '0n+x y', '00n+0n+x y', '0n++x y', '0n+x() y',
+}) do
+  local start = 'def broken(a,b):\n  ' .. pattern .. ' = a b'
+  review_case('2 malformed parallel value ' .. pattern,
+    start .. ' $\n  0', start .. '\n  0',
+    { prefix = '', suffix = '\ndef after():\n  42\n', retained_integer_function = 'def after():\n  42' })
+end
+-- Rejection of expression-shaped targets must preserve the unaffected final
+-- integer as the edited function's body, rather than retaining the bad target.
+for _, target in ipairs({ 'f(1)', 'f()(1)', '(f(1))', 'f[0]' }) do
+  local start = 'import Base\n\ndef boundary(b: U32) -> U32:\n  '
+  review_case('2 malformed assignment final body ' .. target,
+    start .. target .. ' = 3\n  0', start .. 'x = 3\n  0',
+    { prefix = '', suffix = '\n\ndef after() -> U32:\n  42\n',
+      retained_integer_function = 'def after() -> U32:\n  42',
+      edited_integer_function = 'def boundary(b: U32) -> U32:\n  ' .. target .. ' = 3\n  0',
+      damaged_line = target .. ' = 3' })
+end
+for _, natural in ipairs({ '0n', '1n' }) do
+  review_case('2 unfinished natural successor ' .. natural,
+    'def broken(p: Nat) -> Nat:\n  ' .. natural .. '+',
+    'def broken(p: Nat) -> Nat:\n  ' .. natural .. '+p')
+end
 local prefix = 'def before() -> U32: 1\n'
 local suffix = '\n' .. [[
 type Recovered is Data: Recovered{}
@@ -314,6 +341,129 @@ local function check_intact_function(def, text, label)
   if decorator then
     check_range(decorations[1], text, first, first + 6, label .. ' after decorator')
     check_capture(highlights, def, text, 'attribute', first, first + 6, label .. ' after decorator highlight')
+  end
+end
+-- Exact public fields/captures for the small PR #2 boundary fixtures. Unlike
+-- consistency alone, these assertions detect a stable but swallowed body.
+local function check_integer_function(node, text, label, declaration, damaged_line)
+  if text:find('\r\n', 1, true) then declaration = declaration:gsub('\n', '\r\n') end
+  local name, parameters, return_type = declaration:match('^def ([%w_]+)(%b())%s*%-%>%s*([%w_]+):')
+  if not name then name, parameters = declaration:match('^def ([%w_]+)(%b()):') end
+  local first, last = source_range(text, declaration)
+  local def
+  for child in node:iter_children() do
+    local field = child:field('name')[1]
+    if field and vim.treesitter.get_node_text(field, text) == name then def = child end
+  end
+  assert(def and def:type() == 'function_definition', label .. ': lost integer function ' .. name)
+  assert(def:has_error() == (damaged_line ~= nil), label .. ': wrong error ownership in ' .. name)
+  check_range(def, text, first, last, label .. ' integer definition')
+  local fields = {}
+  for _, spec in ipairs({
+    { 'name', name, first + 4 }, { 'parameters', parameters, first + 4 + #name },
+  }) do
+    local a, b = source_range(text, spec[2], spec[3])
+    local field = def:field(spec[1])
+    assert(#field == 1 and not field[1]:has_error(), label .. ': damaged integer function ' .. spec[1])
+    check_range(field[1], text, a, b, label .. ' integer ' .. spec[1])
+    fields[spec[1]] = { a, b, field[1] }
+  end
+  if return_type then
+    local a, b = source_range(text, return_type, fields.parameters[2] + 1)
+    local field = def:field('return_type')
+    assert(#field == 1 and not field[1]:has_error(), label .. ': damaged integer return type')
+    check_range(field[1], text, a, b, label .. ' integer return type')
+  else
+    assert(#def:field('return_type') == 0, label .. ': invented integer return type')
+  end
+  if parameters == '(b: U32)' then
+    local parameter = fields.parameters[3]:named_child(0)
+    local a = fields.parameters[1] + 1
+    check_range(parameter, text, a, a + 5, label .. ' intact parameter')
+    check_range(parameter:field('name')[1], text, a, a, label .. ' intact parameter name')
+    check_range(parameter:field('type')[1], text, a + 3, a + 5, label .. ' intact parameter type')
+    check_capture(highlights, def, text, 'variable.parameter', a, a, label)
+  else
+    assert(fields.parameters[3]:named_child_count() == 0, label .. ': invented empty parameter')
+  end
+  local literal = assert(declaration:match('(%d+)$'))
+  local body_first = last - #literal + 1
+  local body = def:field('body')
+  assert(#body == 1, label .. ': missing integer function body')
+  local integer
+  local damaged_first = damaged_line and source_range(text, damaged_line, fields.parameters[2]) or nil
+  if damaged_line then
+    local function find_terminal(node)
+      if node:type() == 'ERROR' then return end
+      local _, _, a = node:start()
+      local _, _, b = node:end_()
+      if node:type() == 'body' and a == body_first - 1 and b == last
+          and not node:has_error() and node:named_child_count() == 1 then
+        local value = node:named_child(0)
+        if value:type() == 'integer' then return value end
+      end
+      for child in node:iter_children() do
+        local value = find_terminal(child)
+        if value then return value end
+      end
+    end
+    integer = find_terminal(body[1])
+    assert(integer, label .. ': lost clean terminal integer body node')
+    local _, _, a = body[1]:start()
+    local _, _, b = body[1]:end_()
+    assert(body[1]:type() == 'body' and a >= damaged_first - 1
+      and a <= body_first - 1 and b == last, label .. ': body crosses unaffected source boundaries')
+  else
+    assert(not body[1]:has_error(), label .. ': damaged unaffected integer body')
+    check_range(body[1], text, body_first, last, label .. ' integer body')
+    integer = body[1]:named_child(0)
+    assert(body[1]:named_child_count() == 1, label .. ': extra clean integer body nodes')
+  end
+  assert(integer and integer:type() == 'integer', label .. ': lost terminal integer body node')
+  check_range(integer, text, body_first, last, label .. ' integer node')
+  check_capture(highlights, def, text, 'function', fields.name[1], fields.name[2], label)
+  check_capture(highlights, def, text, 'number', body_first, last, label)
+  for file, captures in pairs({
+    folds = { { 'fold', first, last } },
+    tags = { { 'definition.function', first, last }, { 'name', fields.name[1], fields.name[2] } },
+    context = { { 'context', first, last } },
+    textobjects = { { 'function.outer', first, last } },
+    locals = { { 'local.scope', first, last }, { 'local.reference', fields.name[1], fields.name[2] } },
+    indents = { { 'indent.begin', first, last },
+      { 'indent.align', fields.parameters[1], fields.parameters[2] } },
+  }) do
+    for _, spec in ipairs(captures) do
+      check_capture(structure_queries[file].query, def, text, spec[1], spec[2], spec[3], label .. ' ' .. file)
+    end
+  end
+  for file, capture_name in pairs({ context = 'context.end', textobjects = 'function.inner' }) do
+    local query = structure_queries[file].query
+    local found = false
+    for id, capture in query:iter_captures(def, text, 0, -1) do
+      if query.captures[id] == capture_name then
+        local _, _, a = capture:start()
+        local _, _, b = capture:end_()
+        -- Recovery may omit part of the invalid target, but must include the
+        -- terminal value without crossing the header or following declaration.
+        local lower = damaged_first or body_first
+        if b == last and a >= lower - 1 and a <= body_first - 1 then
+          found = true
+        end
+      end
+    end
+    assert(found, label .. ': lost source-bounded body capture @' .. capture_name)
+  end
+  if damaged_line then
+    local a, b = source_range(text, damaged_line, fields.parameters[2])
+    local function localized(n)
+      if n:type() == 'ERROR' or n:missing() then
+        local _, _, start_byte = n:start()
+        local _, _, end_byte = n:end_()
+        assert(start_byte >= a - 1 and end_byte <= b, label .. ': error escaped malformed assignment')
+      end
+      for child in n:iter_children() do localized(child) end
+    end
+    localized(def)
   end
 end
 local function check_neighbors(node, text, label)
@@ -631,19 +781,29 @@ local locality_count, retained_arm_count = 0, 0
 for _, case in ipairs(cases) do
   local ok, err = pcall(function()
     local tail = case.suffix or suffix
-    local broken, fixed = prefix .. case[2] .. tail, prefix .. case[3] .. tail
+    local head = case.prefix or prefix
+    local broken, fixed = head .. case[2] .. tail, head .. case[3] .. tail
     if case.crlf then
       broken, fixed = broken:gsub('\n', '\r\n'), fixed:gsub('\n', '\r\n')
     end
     local expected = parse(fixed)
     assert(not expected:has_error(), case[1] .. ': invalid control fixture')
+    if case.retained_integer_function then
+      check_integer_function(expected, fixed, case[1] .. ' control', case.retained_integer_function)
+    end
     if case.delimiter then
       local expression = case.delimiter.fixed
       if case.crlf then expression = expression:gsub('\n', '\r\n') end
       check_delimiter_owner(expected, fixed, case[1] .. ' control', case.delimiter.kind, expression)
     end
     local function check_damaged(node, label)
-      if case[4] then
+      if case.retained_integer_function then
+        assert(node:has_error(), label .. ': malformed input must retain a native error')
+        check_integer_function(node, broken, label, case.retained_integer_function)
+        if case.edited_integer_function then
+          check_integer_function(node, broken, label, case.edited_integer_function, case.damaged_line)
+        end
+      elseif case[4] then
         assert(node:has_error(), label .. ': broken match must remain an error')
         if case.following_cases then
           check_neighbors(node, broken, label)
@@ -673,7 +833,11 @@ for _, case in ipairs(cases) do
       check_damaged(damaged, case[1] .. ' (incremental)')
       assert(vim.deep_equal(signature(damaged), signature(parse(broken))), case[1] .. ': incremental error tree differs')
       edit(buf, broken, fixed)
-      assert(vim.deep_equal(signature(parser:parse()[1]:root()), signature(expected)), case[1] .. ': repair differs')
+      local restored = parser:parse()[1]:root()
+      assert(vim.deep_equal(signature(restored), signature(expected)), case[1] .. ': repair differs')
+      if case.retained_integer_function then
+        check_integer_function(restored, fixed, case[1] .. ' repaired', case.retained_integer_function)
+      end
     end
     vim.api.nvim_buf_delete(buf, { force = true })
   end)

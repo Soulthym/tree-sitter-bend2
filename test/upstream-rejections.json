@@ -45,6 +45,7 @@
     "tests/flatten/share_binder_syntax.bend",
     "tests/flatten/statement_beta.bend",
     "tests/flatten/statement_lam_absorb.bend",
+    "tests/flatten/unsupported_pattern.bend",
     "tests/import/c_suffix_module.bend",
     "tests/import/dotted_path.bend",
     "tests/import/hub_head_local.bend",
@@ -83,6 +84,7 @@
     "tests/parse/gpu_mark_order.bend",
     "tests/parse/hex_no_digits.bend",
     "tests/parse/if_no_else.bend",
+    "tests/parse/invalid_assign_target.bend",
     "tests/parse/invalid_string_escape.bend",
     "tests/parse/keyword_reserved.bend",
     "tests/parse/legacy_bang_statement.bend",
@@ -103,6 +105,7 @@
     "tests/parse/reserved_type_name.bend",
     "tests/parse/reserved_type_param.bend",
     "tests/parse/type_arg_parens.bend",
+    "tests/parse/typed_let_pattern.bend",
     "tests/parse/unclosed_char_code.bend",
     "tests/parse/unicode_forall_dead.bend",
     "tests/parse/unicode_lambda_dead.bend",
@@ -113,6 +116,13 @@
     "tests/run/array_slab.bend",
     "tests/run/array_struct_swap.bend",
     "tests/run/binop_probe_split.bend",
-    "tests/spec/comp_mint_dedupe.bend"
+    "tests/spec/comp_erased_args.bend",
+    "tests/spec/comp_generic_dedupe.bend",
+    "tests/spec/comp_generic_mint.bend",
+    "tests/spec/comp_instantiation_error.bend",
+    "tests/spec/comp_late_param.bend",
+    "tests/spec/comp_let_split.bend",
+    "tests/spec/comp_mint_dedupe.bend",
+    "tests/spec/mint_count.bend"
   ]
 }

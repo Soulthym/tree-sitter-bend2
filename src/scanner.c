@@ -13,13 +13,15 @@ enum Token {
   DEF_KEYWORD, TYPE_KEYWORD, LAW_KEYWORD, DECLARATION_NAME,
   STRING_START, STRING_NEWLINE, LT, GLUED_LT, GLUED_COMPARISON_END, ERROR_SENTINEL, GPU_OPEN,
   GPU_MODIFIER, CASE_BODY_START, DECORATOR_START, AT, UNSAFE_KEYWORD,
+  PATTERN_SEPARATOR, SUCCESSOR_NATURAL, ZERO_NATURAL, NATURAL_PLUS,
 };
-enum Kind { BODY, MATCH, DO, PAR, LAMBDA, WRITE, CASE_HEADER, BLOCK };
+enum Kind { BODY, MATCH, DO, PAR, LAMBDA, WRITE, CASE_HEADER, BLOCK, MATCH_CLOSED_ARM };
+static bool match_frame(uint8_t kind) { return kind == MATCH || kind == MATCH_CLOSED_ARM; }
 typedef struct { uint32_t column, first; uint8_t kind; } Frame;
 #define MAX_FRAMES 200
 _Static_assert(MAX_FRAMES <= UINT8_MAX, "frame count must fit in one byte");
-// Only MATCH uses `first`. Other frames need five bytes, not nine. Reserve
-// the exact serialized size when pushing; never truncate a live stack.
+// Match frames use `first` in both normal and recovered-arm states. Other
+// frames need five bytes, not nine. Reserve the exact size; never truncate.
 typedef struct { uint8_t size; bool declaration_name, closed_string, decorator_name; Frame frames[MAX_FRAMES]; } Scanner;
 
 static bool space(int32_t c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
@@ -85,10 +87,42 @@ static bool typed_assignment(TSLexer *l) {
   }
   return false;
 }
+
+static bool scan_number(TSLexer *l, const bool *v) {
+  bool zero = true;
+  do {
+    zero &= l->lookahead == '0';
+    advance(l);
+  } while (l->lookahead >= '0' && l->lookahead <= '9');
+  enum Token t = INTEGER;
+  if (l->lookahead == 'n') {
+    advance(l);
+    // Literal and glued-successor heads share the public natural node. Their
+    // tokens distinguish eligibility without a trailing zero-width boundary.
+    t = l->lookahead == '+' ? (zero && v[ZERO_NATURAL] ? ZERO_NATURAL : SUCCESSOR_NATURAL) : NATURAL;
+  } else if (l->lookahead == '.') {
+    advance(l);
+    if (l->lookahead < '0' || l->lookahead > '9') return false;
+    t = FLOAT;
+    do { advance(l); } while (l->lookahead >= '0' && l->lookahead <= '9');
+    l->mark_end(l);
+    if (l->lookahead == 'e' || l->lookahead == 'E') {
+      advance(l);
+      if (l->lookahead == '+' || l->lookahead == '-') advance(l);
+      if (l->lookahead < '0' || l->lookahead > '9') {
+        if (!v[FLOAT]) return false;
+        l->result_symbol = FLOAT; return true;
+      }
+      do { advance(l); } while (l->lookahead >= '0' && l->lookahead <= '9');
+    }
+  }
+  if (!v[t] || (t != FLOAT && name(l->lookahead))) return false;
+  l->mark_end(l); l->result_symbol = t; return true;
+}
 static bool push(Scanner *s, uint8_t kind, uint32_t column) {
   if (s->size == MAX_FRAMES) return false;
-  unsigned bytes = 3 + 5 * (s->size + 1) + (kind == MATCH ? 4 : 0);
-  for (unsigned i = 0; i < s->size; ++i) bytes += s->frames[i].kind == MATCH ? 4 : 0;
+  unsigned bytes = 3 + 5 * (s->size + 1) + (match_frame(kind) ? 4 : 0);
+  for (unsigned i = 0; i < s->size; ++i) bytes += match_frame(s->frames[i].kind) ? 4 : 0;
   if (bytes > TREE_SITTER_SERIALIZATION_BUFFER_SIZE) return false;
   s->frames[s->size++] = (Frame){column, UINT32_MAX, kind};
   return true;
@@ -100,7 +134,7 @@ static uint32_t body_column(const Scanner *s) {
 }
 static inline enum Token frame_end_token(uint8_t kind) {
   switch (kind) {
-    case MATCH: return MATCH_END;
+    case MATCH: case MATCH_CLOSED_ARM: return MATCH_END;
     case DO:    return DO_END;
     case PAR:   return PARALLEL_END;
     case WRITE: return WRITE_END;
@@ -119,7 +153,7 @@ unsigned tree_sitter_bend2_external_scanner_serialize(void *p, char *b) {
     Frame f = s->frames[i];
     b[n++] = (char)f.kind;
     for (unsigned j = 0; j < 4; ++j) b[n++] = (char)(f.column >> (8*j));
-    if (f.kind == MATCH)
+    if (match_frame(f.kind))
       for (unsigned j = 0; j < 4; ++j) b[n++] = (char)(f.first >> (8*j));
   }
   return n;
@@ -135,9 +169,9 @@ void tree_sitter_bend2_external_scanner_deserialize(void *p, const char *b, unsi
     if (n - at < 5) return;
     Frame *f = &s->frames[i];
     f->kind = (uint8_t)b[at++]; f->column = 0; f->first = UINT32_MAX;
-    if (f->kind > BLOCK) return;
+    if (f->kind > MATCH_CLOSED_ARM) return;
     for (unsigned j = 0; j < 4; ++j) f->column |= (uint32_t)(uint8_t)b[at++] << (8*j);
-    if (f->kind == MATCH) {
+    if (match_frame(f->kind)) {
       if (n - at < 4) return;
       f->first = 0;
       for (unsigned j = 0; j < 4; ++j) f->first |= (uint32_t)(uint8_t)b[at++] << (8*j);
@@ -247,17 +281,30 @@ bool tree_sitter_bend2_external_scanner_scan(void *p, TSLexer *l, const bool *v)
     }
     enum Token t = !strcmp(word, "def") ? DEF_KEYWORD : !strcmp(word, "type") ? TYPE_KEYWORD :
       !strcmp(word, "law") ? LAW_KEYWORD : ERROR_SENTINEL;
-    if (t != ERROR_SENTINEL && v[t]) {
-      if (v[ERROR_SENTINEL] && !newline && !s->declaration_name) return false;
-      // During recovery, close real scopes before restarting at a root header.
-      // Clearing the frames immediately can strand the parser inside the old
-      // body and make it skip this header and every following declaration.
-      if (v[ERROR_SENTINEL] && newline && col == 0 && top && top->kind != PAR) {
-        enum Token end = frame_end_token(top->kind);
-        if (v[end]) {
-          --s->size; l->result_symbol = end; return true;
-        }
+    if (t != ERROR_SENTINEL && v[ERROR_SENTINEL] && !newline && !s->declaration_name) return false;
+    if (t != ERROR_SENTINEL && newline && col == 0 && top && top->kind != PAR && (!v[t] || v[ERROR_SENTINEL])) {
+      if (top->kind == MATCH && top->first != UINT32_MAX && v[BODY_END] && !v[MATCH_END]) {
+        // Pattern recovery can consume the arm's frame while the parser still
+        // needs its end. A recorded case makes this a real arm boundary;
+        // emit it once per owning match by persisting the state transition,
+        // keeping the real match and outer body available for their own ends.
+        s->declaration_name = true;
+        top->kind = MATCH_CLOSED_ARM; l->result_symbol = BODY_END; return true;
       }
+      // A damaged pattern may still be waiting for a body or a closer, with
+      // no declaration token enabled. Close existing scopes before the
+      // internal recovery lexer can consume this header as another word.
+      enum Token end = frame_end_token(top->kind);
+      if (v[end]) {
+        // The next state may wait for a missing closer without scanning the
+        // header again; remember its name just as ordinary BODY_END does.
+        s->declaration_name = true;
+        --s->size; l->result_symbol = end; return true;
+      }
+    }
+    // A viable fresh header takes precedence over stale normal-mode frames.
+    // Otherwise an unfinished delimiter can cost the next declaration its CST.
+    if (t != ERROR_SENTINEL && v[t]) {
       s->size = 0;
       s->decorator_name = false;
       l->mark_end(l);
@@ -293,6 +340,9 @@ bool tree_sitter_bend2_external_scanner_scan(void *p, TSLexer *l, const bool *v)
     l->mark_end(l); l->result_symbol = GPU_MODIFIER; return true;
   }
   if (v[ERROR_SENTINEL]) {
+    // Real lexemes are safe recovery anchors too. Otherwise an invalid byte
+    // can swallow the next intact literal before any parser state can resume.
+    if (l->lookahead >= '0' && l->lookahead <= '9') return scan_number(l, v);
     // Only actual, bounded scope closures are safe to synthesize at EOF. Never
     // push speculative frames while Tree-sitter is trying all recovery tokens.
     if (!top || !l->eof(l)) return false;
@@ -328,6 +378,11 @@ bool tree_sitter_bend2_external_scanner_scan(void *p, TSLexer *l, const bool *v)
       }
     }
     l->result_symbol = AT; return true;
+  }
+  // A glued natural successor consumes exactly one '+', even before another
+  // '+' or a numeric tail. Do not let arithmetic '+' / '++' steal this prefix.
+  if (v[NATURAL_PLUS] && !spaced && l->lookahead == '+') {
+    advance(l); l->mark_end(l); l->result_symbol = NATURAL_PLUS; return true;
   }
   // Keep the immediate GPU opener out of the regular '(' lexer rules:
   // sharing them changes recovery of malformed declaration headers.
@@ -426,7 +481,7 @@ bool tree_sitter_bend2_external_scanner_scan(void *p, TSLexer *l, const bool *v)
     if (!push(s, MATCH, body_column(s))) return false;
     l->result_symbol = MATCH_START; return true;
   }
-  if ((v[CASE] || v[MATCH_END]) && top && top->kind == MATCH) {
+  if ((v[CASE] || v[MATCH_END]) && top && match_frame(top->kind)) {
     // A case owns its keyword, not the whitespace after the previous body.
     // MATCH_END must instead remain at the previous body's end.
     if (v[CASE] && col >= top->column && (top->first == UINT32_MAX || col >= top->first) && l->lookahead == 'c') l->mark_end(l);
@@ -494,6 +549,9 @@ bool tree_sitter_bend2_external_scanner_scan(void *p, TSLexer *l, const bool *v)
     enum Token t = l->lookahead == '+' ? PLUS : MINUS;
     advance(l);
     if (head(l->lookahead)) {
+      if (t == PLUS && v[PATTERN_SEPARATOR]) {
+        l->result_symbol = PATTERN_SEPARATOR; return true;
+      }
       if (v[PARALLEL_END] && top && top->kind == PAR && !top->column) {
         --s->size; l->result_symbol = PARALLEL_END; return true;
       }
@@ -523,6 +581,31 @@ bool tree_sitter_bend2_external_scanner_scan(void *p, TSLexer *l, const bool *v)
     if (!space(l->lookahead)) return false;
     l->mark_end(l); l->result_symbol = MOD; return true;
   }
+  if (v[PATTERN_SEPARATOR]) {
+    int32_t c = l->lookahead;
+    if (head(c)) {
+      char word[32];
+      if (!read_name(l, word, sizeof(word)) || reserved(word)) return false;
+      l->result_symbol = PATTERN_SEPARATOR; return true;
+    }
+    // parse_term_ops treats even spaced ( and [ as postfix on the same line.
+    // A comma bypasses this token; a newline genuinely starts another term.
+    if ((c >= '0' && c <= '9') || c == '\'' || c == '"' ||
+        (newline && (c == '(' || c == '['))) {
+      l->result_symbol = PATTERN_SEPARATOR; return true;
+    }
+    if (c == '+') {
+      advance(l);
+      if (head(l->lookahead)) {
+        l->result_symbol = PATTERN_SEPARATOR; return true;
+      }
+      // An expression alternative may still own this arithmetic operator.
+      if (v[PLUS] && l->lookahead != '+' && l->lookahead != '>') {
+        l->mark_end(l); l->result_symbol = PLUS; return true;
+      }
+      return false;
+    }
+  }
   if (v[GLUED_COMPARISON_END]) {
     // Bend 2.0.32: a glued `<` cannot finish its first operand at a type
     // operator. Boolean operators do terminate it; high-precedence operators
@@ -550,29 +633,8 @@ bool tree_sitter_bend2_external_scanner_scan(void *p, TSLexer *l, const bool *v)
     if (!read_name(l, word, sizeof(word)) || reserved(word)) return false;
     l->mark_end(l); l->result_symbol = IDENTIFIER; return true;
   }
-  if ((v[INTEGER] || v[NATURAL] || v[FLOAT]) && l->lookahead >= '0' && l->lookahead <= '9') {
-    do { advance(l); } while (l->lookahead >= '0' && l->lookahead <= '9');
-    enum Token t = INTEGER;
-    if (l->lookahead == 'n') { t = NATURAL; advance(l); }
-    else if (l->lookahead == '.') {
-      advance(l);
-      if (l->lookahead < '0' || l->lookahead > '9') return false;
-      t = FLOAT;
-      do { advance(l); } while (l->lookahead >= '0' && l->lookahead <= '9');
-      l->mark_end(l);
-      if (l->lookahead == 'e' || l->lookahead == 'E') {
-        advance(l);
-        if (l->lookahead == '+' || l->lookahead == '-') advance(l);
-        if (l->lookahead < '0' || l->lookahead > '9') {
-          if (!v[FLOAT]) return false;
-          l->result_symbol = FLOAT; return true;
-        }
-        do { advance(l); } while (l->lookahead >= '0' && l->lookahead <= '9');
-      }
-    }
-    if (!v[t] || (t != FLOAT && name(l->lookahead))) return false;
-    l->mark_end(l); l->result_symbol = t; return true;
-  }
+  if ((v[INTEGER] || v[NATURAL] || v[ZERO_NATURAL] || v[SUCCESSOR_NATURAL] || v[FLOAT])
+      && l->lookahead >= '0' && l->lookahead <= '9') return scan_number(l, v);
   // Give ordinary grammar tokens a chance to extend the current expression.
   if (strchr("<{|&*/.!=:", l->lookahead) && l->lookahead) return false;
   if (v[PARALLEL_END] && top && top->kind == PAR && !top->column) {
