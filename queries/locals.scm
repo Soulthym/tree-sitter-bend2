@@ -11,6 +11,8 @@
 (dependent_type name: (identifier) @local.definition)
 (lambda_expression parameter: (identifier) @local.definition)
 (lambda_expression parameter: (reusable_expression (identifier) @local.definition))
+(lambda_expression parameter: (parenthesized_expression body: (body (identifier) @local.definition)))
+(lambda_expression parameter: (parenthesized_expression body: (body (reusable_expression (identifier) @local.definition))))
 (let_expression pattern: (binding (identifier) @local.definition))
 (let_expression pattern: (binding (reusable_expression (identifier) @local.definition)))
 (parallel_let_expression pattern: (binding (identifier) @local.definition))
