@@ -1,5 +1,7 @@
--- Annotated lambda and nested-match regressions; raw edits keep EOF exact.
+-- Bend v2.0.36 witnesses; raw TSTree edits keep literal EOF exact.
+-- BEND2_UPSTREAM defaults to ../bend and must match the pinned release.
 vim.treesitter.language.add('bend2', {path=vim.env.BEND2_PARSER or 'build/bend2.so'})
+local upstream=vim.env.BEND2_UPSTREAM or vim.fn.getcwd()..'/../bend'
 local qs={}; for _,f in ipairs({'highlights','locals','tags','folds','context','textobjects','indents'}) do
   qs[f]=vim.treesitter.query.parse('bend2',table.concat(vim.fn.readfile('queries/'..f..'.scm'),'\n'))
 end
@@ -66,6 +68,7 @@ local cases={
   {name='triple outer sibling',text='import Base\ndef probe(a: Bool, b: Bool, c: Bool) -> U32:\n  match a:\n    case False{}:\n      match b:\n        case False{}:\n          match c:\n            case False{}: 0\n    case True{}: 2'..after},
   {name='triple two branches',text='import Base\ndef probe(a: Bool, b: Bool, c: Bool) -> U32:\n  match a:\n    case False{}:\n      match b:\n        case False{}:\n          match c:\n            case False{}: 0\n        case True{}:\n          match c:\n            case False{}: 1\n    case True{}: 2'..after},
 }
+for _,f in ipairs({'convoy_dependent','kind_terms'}) do cases[#cases+1]={name=f,text=table.concat(vim.fn.readfile(upstream..'/tests/check/'..f..'.bend','b'),'\n'):gsub('\n$','')} end
 local results,failures,edits={}, {},0
 for _,case in ipairs(cases) do for _,nl in ipairs({'\n','\r\n'}) do for _,ending in ipairs({'','\n'}) do
   local s=(case.text..ending):gsub('\n',nl);local label=case.name..(nl=='\n' and ' LF' or ' CRLF')..(ending=='' and ' EOF' or ' final LF')
@@ -103,6 +106,13 @@ for _,case in ipairs(cases) do for _,nl in ipairs({'\n','\r\n'}) do for _,ending
       local twice=case.name~='triple outer sibling';local middle=arms(field(root[1],'body'):named_child(0),twice and 2 or 1,'b')
       for _,row in ipairs(middle) do arms(field(row,'body'):named_child(0),case.name=='convoy_dependent' and 2 or 1,'c') end
       assert(vim.treesitter.get_node_text(field(root[2],'pattern'),s)=='True{}','outer sibling borrowed')
+    end
+    if case.name=='kind_terms' then
+      local d=declaration('main');local binders={};walk(d,function(c)if c:type()=='lambda_expression' then
+        local param=field(c,'parameter');assert(param:type()=='parenthesized_expression','typed lambda kind')
+        binders[vim.treesitter.get_node_text(param,s)]=vim.treesitter.get_node_text(field(c,'body'),s)
+        assert(c:parent():type()=='constructor_expression','lambda escaped Mk/MkDuo argument')
+      end end);assert(vim.deep_equal(binders,{['(y: Nat)']='1n',['(z: Nat)']='z'}),'full kind_terms lambda owners')
     end
     local at=math.floor(#s/2);local change=s:sub(1,at)..' '..s:sub(at+1)
     if case.repair then change=s..case.repair end

@@ -60,7 +60,7 @@
     "test": "tree-sitter test",
     "test:bindings": "node --test bindings/node/*_test.js",
     "test:scanner": "mkdir -p build && cc -std=c11 -Wall -Wextra -Werror -Isrc scripts/test-gpu-prefix.c src/parser.c -o build/test-scanner && build/test-scanner",
-    "test:upgrade": "tree-sitter build -o build/bend2.so && nvim --headless -u NONE -l scripts/test-upgrade.lua",
+    "test:upgrade": "tree-sitter build -o build/bend2.so && nvim --headless -u NONE -l scripts/test-upgrade.lua && nvim --headless -u NONE -l scripts/test-bend-2.0.36.lua",
     "test:syntax": "tree-sitter build -o build/bend2.so && nvim --headless -u NONE -l scripts/test-syntax-boundaries.lua",
     "test:stdlib": "tree-sitter build -o build/bend2.so && nvim --headless -u NONE -l scripts/test-stdlib.lua",
     "test:release": "node scripts/test-release.mjs",
