@@ -104,6 +104,9 @@ records overall); these are not different before/after results. A new annotated
 lambda with an invalid `$` body can still lose its enclosing law, as its already
 admitted bare-lambda counterpart does on the baseline. This update neither
 redesigns that deferred recovery family nor weakens its tests.
+`npm run test:offline` remains red and stops at the 28 existing rewrite-recovery
+failures, before common recovery. Later suites were executed separately, not
+claimed reached by the chained gate. No failing tests are bypassed or disabled.
 The CI PR remains postponed on its own branch and its policy was not changed.
 
 ## Reproduction
@@ -122,6 +125,7 @@ npm run test:syntax
 npm run test:stdlib
 npm run test:upstream
 npm run test:release
+# Intentionally strict; currently stops at the documented rewrite failures:
 npm run test:offline
 ```
 
