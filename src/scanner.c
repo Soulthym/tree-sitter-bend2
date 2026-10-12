@@ -511,7 +511,11 @@ bool tree_sitter_bend2_external_scanner_scan(void *p, TSLexer *l, const bool *v)
     }
     enum Token t = !strcmp(word, "def") ? DEF_KEYWORD : !strcmp(word, "type") ? TYPE_KEYWORD :
       !strcmp(word, "law") ? LAW_KEYWORD : ERROR_SENTINEL;
-    if (t != ERROR_SENTINEL && newline && col == 0 && !s->case_header && top && done_match(top->kind)) {
+    // Finish an existing ancestor before lexing an outer header or a real
+    // dedented case that no completed child above could own. Recovery's
+    // all-valid set is not permission to invent or complete a case scope.
+    if (newline && !s->case_header && top && done_match(top->kind)
+        && ((t != ERROR_SENTINEL && col == 0) || (!v[ERROR_SENTINEL] && !strcmp(word, "case")))) {
       for (unsigned i = s->size; i > 0; --i) {
         Frame *f = &s->frames[i-1];
         if (done_frame(f->kind)) continue;

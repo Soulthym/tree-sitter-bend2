@@ -397,7 +397,37 @@ static void block_operator_tests(void) {
   assert(!tree_sitter_bend2_external_scanner_scan(&s, &p.lexer, v) && !s.size); round_trip(&s);
   puts("Block operators: enabled arithmetic/comparisons retain their operands without allocating a body; glued reusable names still enter it.");
 }
+static void nested_sibling_end_tests(void) {
+  for (unsigned crlf = 0; crlf < 2; ++crlf) {
+    Scanner s = {0};
+    assert(push(&s, BODY, 0) && push(&s, FUNCTION_MATCH, 0)); s.frames[1].first = 4;
+    assert(push(&s, CASE_ARM, 5) && push(&s, ARM_MATCH, 5)); s.frames[3].first = 8;
+    assert(push(&s, CASE_ARM, 9) && push(&s, ARM_MATCH, 9)); s.frames[5].first = 12;
+    s.frames[4].kind = ARM_DONE; s.frames[5].kind = ARM_MATCH_DONE; round_trip(&s);
+    bool all[ARRAY_LAYOUT + 1]; memset(all, 1, sizeof(all));
+    Probe p = probe(crlf ? "\r\n    case B{}" : "\n    case B{}");
+    Scanner recovery = s;
+    assert(!tree_sitter_bend2_external_scanner_scan(&recovery, &p.lexer, all));
+    assert(!memcmp(&s, &recovery, sizeof(s))); round_trip(&recovery);
+    bool v[ARRAY_LAYOUT + 1] = {0};
+    v[ROOT_LAYOUT] = v[ARRAY_LAYOUT] = v[ARM_MATCH_END] = v[ARM_CASE] = true;
+    p = probe(crlf ? "\r\n    case B{}" : "\n    case B{}");
+    assert(tree_sitter_bend2_external_scanner_scan(&s, &p.lexer, v));
+    assert(p.lexer.result_symbol == ARM_MATCH_END && !p.end && s.size == 6);
+    assert(s.frames[3].kind == ARM_MATCH_DONE && s.frames[1].kind == FUNCTION_MATCH); round_trip(&s);
+    memset(v, 0, sizeof(v)); v[ROOT_LAYOUT] = v[ARRAY_LAYOUT] = v[ARM_END] = true;
+    p = probe(crlf ? "\r\n    case B{}" : "\n    case B{}");
+    assert(tree_sitter_bend2_external_scanner_scan(&s, &p.lexer, v));
+    assert(p.lexer.result_symbol == ARM_END && s.frames[2].kind == ARM_DONE); round_trip(&s);
+    memset(v, 0, sizeof(v)); v[FUNCTION_MATCH_END] = v[FUNCTION_CASE] = true;
+    p = probe(crlf ? "\r\n    case B{}" : "\n    case B{}");
+    assert(tree_sitter_bend2_external_scanner_scan(&s, &p.lexer, v));
+    assert(p.lexer.result_symbol == FUNCTION_CASE && s.size == 2 && s.case_header); round_trip(&s);
+  }
+  puts("Nested sibling: normal ancestor end, real outer arm/case, LF/CRLF and all-valid inert ownership passed.");
+}
 int main(void) {
+  nested_sibling_end_tests();
   block_entry_tests();
   block_operator_tests();
   pending_completion_tests();

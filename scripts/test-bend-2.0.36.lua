@@ -1,4 +1,4 @@
--- Annotated lambda regressions; raw TSTree edits keep literal EOF exact.
+-- Annotated lambda and nested-match regressions; raw edits keep EOF exact.
 vim.treesitter.language.add('bend2', {path=vim.env.BEND2_PARSER or 'build/bend2.so'})
 local qs={}; for _,f in ipairs({'highlights','locals','tags','folds','context','textobjects','indents'}) do
   qs[f]=vim.treesitter.query.parse('bend2',table.concat(vim.fn.readfile('queries/'..f..'.scm'),'\n'))
@@ -63,6 +63,8 @@ local cases={
   {name='law grouped body',text=before..'law probe: (x: Nat) => (x : Nat)'..after},
   {name='missing lambda body',text=before..'law probe: (x: Nat) =>',error=true,repair=' x'},
   {name='wrong binder',text=before..'law probe: (x + 1 : Nat) => x'..after,error=true},
+  {name='triple outer sibling',text='import Base\ndef probe(a: Bool, b: Bool, c: Bool) -> U32:\n  match a:\n    case False{}:\n      match b:\n        case False{}:\n          match c:\n            case False{}: 0\n    case True{}: 2'..after},
+  {name='triple two branches',text='import Base\ndef probe(a: Bool, b: Bool, c: Bool) -> U32:\n  match a:\n    case False{}:\n      match b:\n        case False{}:\n          match c:\n            case False{}: 0\n        case True{}:\n          match c:\n            case False{}: 1\n    case True{}: 2'..after},
 }
 local results,failures,edits={}, {},0
 for _,case in ipairs(cases) do for _,nl in ipairs({'\n','\r\n'}) do for _,ending in ipairs({'','\n'}) do
@@ -91,6 +93,17 @@ for _,case in ipairs(cases) do for _,nl in ipairs({'\n','\r\n'}) do for _,ending
       local d=declaration(name);assert(not d:has_error(),'damaged neighbor '..name)
       local a,b=assert(s:find(name=='Next' and 'type Next is Data: N{}' or name=='next_law' and 'law next_law: U32' or name=='before' and 'def before() -> U32: 1' or 'def after() -> U32: 42',1,true));exact(d,s,s:sub(a,b),a)
     end end
+    local function arms(m,expected,value)
+      assert(m:type()=='match_expression' and vim.treesitter.get_node_text(field(m,'value'),s)==value,'wrong match owner '..value)
+      local rows={};for c in m:iter_children() do if c:type()=='case_clause' then rows[#rows+1]=c end end
+      assert(#rows==expected,'case count under '..value);return rows
+    end
+    if case.name:find('triple',1,true) or case.name=='convoy_dependent' then
+      local d=declaration(case.name=='convoy_dependent' and 'pick_deep' or 'probe');local root=arms(field(d,'body'):named_child(0),2,'a')
+      local twice=case.name~='triple outer sibling';local middle=arms(field(root[1],'body'):named_child(0),twice and 2 or 1,'b')
+      for _,row in ipairs(middle) do arms(field(row,'body'):named_child(0),case.name=='convoy_dependent' and 2 or 1,'c') end
+      assert(vim.treesitter.get_node_text(field(root[2],'pattern'),s)=='True{}','outer sibling borrowed')
+    end
     local at=math.floor(#s/2);local change=s:sub(1,at)..' '..s:sub(at+1)
     if case.repair then change=s..case.repair end
     for _=1,3 do
