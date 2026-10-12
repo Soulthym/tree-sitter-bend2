@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+- Upgrade the Go runtime binding to `go-tree-sitter v0.25.0` for ABI 15 and
+  require Go 1.23+. Commit module checksums and test actual parser loading plus
+  valid source parsing; the old language-object-only test missed incompatibility.
+- Retain the full successor operand's atomic GPU call through native infix
+  errors, with 1,172 exact ownership tests and real byte-edit repairs. No public
+  schema/scanner-state change; compiled-library cost +23.25%.
+
+- Preserve the next law after a malformed lambda rewrite proof and the actual
+  outer-law terminal body/rewrite scope after a bad let value. Add the full
+  strict40 next-law/40 law-body/eight scope/four missing-body guard matrix.
+- Document the still-unresolved nested-proof law recovery defect: its completed
+  inner rewrite survives, but the law wrapper/terminal body can be lost. Keep
+  its28 regressions red; the strict offline gate is not claimed green. See
+  [known limits](README.md#known-nested-proof-law-recovery-limit).
+
+- Restore comma-free string patterns and contextual infix `&` without changing
+  quantity syntax. Preserve following declarations after parallel/array damage,
+  grouped-pattern siblings and intact literal continuations. Reject invalid
+  assignment targets inside their full edited function; commit completed
+  successor operands before recovery can borrow another statement's value.
+  Extend LF/CRLF native-error ownership, field/capture and repeated-repair tests.
+
+- Preserve arm-free eliminator identities in recursive patterns and named
+  bindings. Require an eligible fallback; keep actual eliminator arms and
+  expression-shaped fallbacks invalid as patterns. Add LF/CRLF rejection/
+  repair controls and a public-CST regression without changing scanner state.
+
+- Document the public CST migration for glued `1n+2n`: binary
+  `left/operator/right` fields become an unfielded successor head and `value`.
+  Provide and execute the replacement query with exact LF/CRLF capture ranges.
+
+- Preserve binary `&` after natural literals and keep trailing comments outside
+  natural-valued body fields. Distinguish literal and glued-successor tokens
+  without a trailing zero-width natural token.
+- Preserve following declarations after damaged parallel-let values and clean
+  terminal values after invalid call/index assignment targets. Expose actual
+  numeric lexemes during native recovery without admitting expression patterns
+  or adding body-selector state. Add LF/CRLF field/capture and break/repair checks.
+- Strengthen mutation regressions for natural operator spacing and recovered
+  match-frame serialization with an independent expected-state oracle.
+
 - Restore declaration/arm recovery after malformed case headers, unfinished
   GPU prefixes and missing function names with GPU bodies. Recognize an
   immediately following decorated definition after an invalid `do`.
@@ -12,6 +53,12 @@
 - Correct GPU migration guidance: `gpu_call` changes from a named leaf to a
   composite node, not from a combined anonymous token.
 
+- Reject non-pattern assignment and case terms, destructuring in typed/parallel
+  lets, and law templates after ordinary clauses. Preserve recursive patterns,
+  empty-call and zero-successor identities, optional commas, named CST nodes
+  and following declarations through repair.
+  Add LF/CRLF regressions using all ten affected official malformed fixtures;
+  update the reviewed rejection baseline without exempting new failures.
 - Preserve following top-level declarations after invalid nested `do` bodies
   by closing bounded scanner scopes before restarting declaration recovery.
   Add LF/CRLF break/repair regressions; keep native syntax errors and existing

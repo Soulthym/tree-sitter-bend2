@@ -80,6 +80,50 @@ claimed language or count such an exception as a successful error-detection test
   Other damaged-arm forms remain coarse: consistency/repair tests alone do not
   establish preservation of the following arms' highlighting.
 
+## Known nested-proof law limitation
+
+The PR branch preserves a healthy next law after a bad lambda rewrite proof and
+keeps the actual outer-law body and retained function rewrite scope after a bad
+let value. Its normal proof/colon checkpoint and explicit real separator caller
+retain native errors; they neither predict later declaration headers nor invent
+optional bodies. The strict repo regression matrix includes all40 next-law and
+all40 law-body variants, eight scopes and four missing-body/following-type guards.
+
+A nested invalid proof remains unresolved:
+
+```bend
+law b:for v:%$:%f:T;0;0
+T
+```
+
+`$` → `e` is the exact accepted syntax repair. With `$`, recovery retains the
+completed inner rewrite but loses the enclosing law wrapper and real terminal
+body `T`/captures. The24 matrix cases and four original cases remain failing
+assertions in `scripts/test-rewrite-recovery.lua`, not disabled tests.
+
+A successful correction must also preserve laws with genuinely missing bodies:
+
+```bend
+def before()->U32:1
+law b:for v:%e:
+T
+type Next is Data:Next{}
+law after:T
+def next()->U32:42
+```
+
+Both the
+rewrite and law need their own native missing body, and `Next` must remain intact.
+A tested distinct-caller alternative keeps `Next` but drops the law wrapper;
+closing its postfix paths restores this guard but reintroduces outer-body
+borrowing after bad lets. Neither alternative is included. Documenting this
+limit does not weaken the policy or assert impossibility; further fixes must
+satisfy all those ownership requirements together.
+
+Current strict rewrite result:108/136; common recovery separately539/551 with12
+inherited failures. No whole-offline-green claim. For exact-EOF inputs use string
+parsers/native checks: Neovim buffers add a virtual LF, even with `eol=false`.
+
 ## Honest reporting
 
 Distinguish acceptance/rejection, error locality, retained tooling captures,

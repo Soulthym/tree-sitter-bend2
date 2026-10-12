@@ -50,23 +50,26 @@ installed main-branch nvim-treesitter checkout; set `BEND2_NVIM_TREESITTER` to i
 path if it is not under `stdpath('data') .. '/lazy/nvim-treesitter'`.
 `test:bindings` retains the scaffold's Node binding test, requiring its npm
 dependencies to be installed separately.
+The Go binding requires Go **1.23+** and `go-tree-sitter v0.25.0` for grammar
+ABI 15. Run `go test ./bindings/go`; this loads the grammar into an actual parser
+and parses a valid program, rather than only constructing a language object.
 
 ### Validation results
 
-On the pinned checkout:
+On the integrated parser, using the existing 10-second per-file deadline:
 
 - **1,644 / 1,644 `.bend` files visited**, with a per-file timeout.
-- **1,532 clean parses**, including the entire 3,009-line standard library,
-  all demos, all benchmarks and every fixture without an expected diagnostic.
-- **112 rejections**, pinned in `test/upstream-rejections.json`. These contain
+- **1,522 clean parse results**, including the entire 3,009-line standard library,
+  all demos and the completed non-diagnostic fixtures.
+- **122 reviewed syntax rejections**, pinned in `test/upstream-rejections.json`. These contain
   malformed or removed syntax. Some upstream goldens stop at an *earlier*
   semantic error, so “expects an error” alone is not used as an exemption.
-- **41 corpus cases**, covering tree shape, precedence, column ownership,
+- **42 corpus cases**, covering tree shape, precedence, column ownership,
   literals, proofs, do notation, templates, parallel lets, arrays and rejection.
 - All seven queries compile in Neovim **0.12.1**; captures, folds, conventional
   indentation and **180 deterministic incremental edits** are checked.
-- **72 declaration-recovery scenarios** check error locality and retained
-  highlight captures; **36 sibling-arm scenarios** also preserve intact
+- **124 declaration-recovery scenarios** check error locality and retained
+  highlight captures; **40 sibling-arm scenarios** also preserve intact
   `case_clause` fields and highlight/fold/context/textobject/local/indent captures
   after missing call/constructor closers (including calls in let values),
   mistyped GPU openers and nested match boundaries. Malformed case-header
@@ -83,9 +86,29 @@ On the pinned checkout:
   and six valid nested-GPU controls cover differently indented closers without
   imposing an alignment rule. This does not make ordinary lets or `match` inside
   `do` valid Bend, or guarantee preservation of the damaged function itself.
-- **53 upgrade checks** cover syntax boundaries, valid lookalikes, deep nesting
-  and incremental edits. Standalone C tests exercise scanner serialization,
-  full-width columns, all frame kinds, capacity and truncated states.
+  Damaged parallel-let values retain their following definition. Invalid
+  call/index assignment targets retain the edited function's header and clean
+  terminal literal body/capture (integer, natural, float, character or string),
+  without pinning an incidental recovery shape. Invalid parallel targets also
+  retain their complete edited function and its own error instead of leaving a
+  falsely clean, truncated definition. Grouped-pattern damage retains intact
+  siblings under their actual match.
+- **85 upgrade checks** cover syntax boundaries, valid lookalikes, deep nesting
+  and incremental edits, including natural-literal binary operands, postfixes
+  and body/capture boundaries before trailing comments. Standalone C tests
+  exercise scanner serialization, full-width columns, all frame kinds, capacity
+  and truncated states.
+- **This PR branch's strict offline gate is currently red.** The rewrite-owner
+  suite passes **108/136** cases; its **28** failures exercise the documented
+  [nested-proof law recovery limitation](#known-nested-proof-law-recovery-limit).
+  The common recovery suite separately passes **539/551** cases, with **12**
+  existing nested-match/transfer/tight-array failures. These are not exemptions
+  or successful ownership checks. The remaining component gates pass.
+  The suite also includes negative tests beyond the official Bend examples.
+  The 2.6 MB `generics_3200/main.bend` parsed in **3.65 seconds** and
+  the 5.7 MB `proofs_3200/main.bend` in **5.30 seconds**, under the unchanged
+  10-second deadline. Earlier parser snapshots timed out; these are measured
+  final-parser results, not a guarantee for every machine or workload.
 
 The sweep writes **every file's result** to `build/upstream-report.json`, not
 just failures. New rejections (including diagnostic fixtures) and formerly
@@ -164,6 +187,24 @@ Indentation queries suggest conventional formatting; they do not define the
 language. Native C/JS foreign imports contain **paths**, not embedded source,
 so there is deliberately no fake C/JS injection query.
 
+Assignments and case arms accept recursive patterns, not arbitrary expressions:
+calls with arguments, indexing and lambdas cannot be patterns, including inside
+constructors, lists, tuples and natural successors. Same-line `f (1)` and
+`f [0]` are still postfix expressions, not separate patterns; a comma or newline
+separates them. Empty `()` suffixes preserve eligible patterns, and `0n+name`
+(including leading-zero spellings) preserves name binders, as in the compiler.
+Typed and parallel lets bind names, not destructuring patterns; grouped/reusable
+names and these identity forms remain supported. Arm-free `\{pattern}`
+wrappers preserve an eligible fallback; eliminators with arms remain expressions,
+not patterns. Typed/parallel wrappers still require name fallbacks. Erased `-`
+lets take a direct name. Law templates (`for ~...`) must precede ordinary `for`/`exs` clauses.
+
+Constructor resolution/arity, resolved-name eligibility, literal limits, pattern
+counts and computed-match eligibility remain compiler-owned. `npm run test:syntax`
+checks legal controls, the ten affected official malformed files, neighboring
+declarations, and LF/CRLF incremental rejection/repair; set `BEND2_UPSTREAM` to
+the pinned checkout.
+
 For editor consumers, `gpu_call` still spans `!(`, but now contains separate
 anonymous `!` and `(` children. The modifier capture covers only `!`; bracket
 queries can capture `(` and the enclosing `arguments` node's closing `)`.
@@ -171,6 +212,20 @@ Previously `gpu_call` was a named leaf spanning `!(`; it is now a named
 composite node. Existing `(gpu_call)` queries remain valid. Consumers assuming
 a leaf or capturing the whole node as the modifier should target its `!` child
 instead. Tree-sitter ABI 15 is unchanged.
+
+The glued successor `1n+2n` also changes public tree shape: previously it was
+`binary_expression` with `left`, `operator`, and `right` fields; now it is
+`natural_successor` with an unfielded leading `natural`, an anonymous `+`, and
+`value: (natural)`. Spaced arithmetic remains a binary expression. Queries using
+the old binary fields must target the successor instead; anchor the first named
+child so the tail is not also captured as the prefix:
+
+```query
+(natural_successor
+  . (natural) @prefix
+  "+" @operator
+  value: (_) @value)
+```
 
 ### Recovery while editing
 
@@ -207,6 +262,54 @@ absorbed into an error region, and complicated combinations can also affect
 following declarations. Five such probes verify repair and incremental
 consistency, not highlight preservation for those arms. Fixing the original
 syntax error restores the complete tree.
+
+### Successor/GPU recovery scope and cost
+
+This PR branch preserves the atomic GPU call as a glued
+successor's actual `value` after an invalid `+`/`-`, instead of recovering the
+successor as the call's callee. All **1,172** qualified successor cases pass;
+valid syntax, public schema and all 1,644 upstream CSTs are unchanged against the
+#1/#3 comparison base.
+
+The same-flag compiled library is **23.25% larger** (+844 KiB). Five alternating
+full-upstream timing pairs have overlapping ranges (medians 3.541 s / 3.518 s);
+there is no demonstrated speed improvement or universal performance claim.
+Ordinary function-body EOF combinations still have 32 inherited GPU-owner
+failures; neither this correction nor consistent edits makes those cases green.
+The known law and common recovery failures below also remain.
+
+### Known nested-proof law recovery limit
+
+This PR branch includes fixes preserving a following law after a bad lambda
+rewrite proof, and preserving the enclosing law's real terminal body and retained
+function rewrite scope after a bad let value. The repository's strict
+[`test-rewrite-recovery.lua`](scripts/test-rewrite-recovery.lua) includes all
+**40** next-law and **40** law-body variants, **eight** function-scope variants
+and **four** missing-body/following-type guards, alongside the original cases.
+They cover LF/CRLF, literal EOF/final LF, fields/ranges/seven query groups and
+three minimal buffer break/repair cycles where the buffer has a final LF.
+Neovim buffers add a virtual LF; exact no-final-LF checks use string parsing,
+not a claim that those buffers have literal EOF.
+
+**Nested invalid rewrite proofs can still destroy their enclosing law owner:**
+
+```bend
+law b:for v:%$:%f:T;0;0
+T
+```
+
+Replacing only `$` with `e` repairs the syntax. On the damaged input, the inner
+`%f:T;0` survives, but the enclosing `law_definition b` becomes `ERROR` and the
+final `T` loses its law-body field and associated captures. This is a known
+recovery defect, not intended syntax, successful error localization or evidence
+that consumers should discard every declaration containing an error.
+
+The suite retains **24** nested-proof matrix cases plus **four** original cases
+as strict failures; it does not skip them or bless the damaged tree. Tested
+alternatives restore those owners but lose missing-body law wrappers or borrow
+outer bodies after bad lets. They are not included. The limitation is documented
+pending a safe shared recovery design; repairing the source restores the tree.
+See the [recovery policy](docs/recovery-policy.md#known-nested-proof-law-limitation).
 
 ### Boundaries and remaining limitations
 

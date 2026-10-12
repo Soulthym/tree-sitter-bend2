@@ -1279,26 +1279,10 @@
     "fields": {},
     "children": {
       "multiple": false,
-      "required": true,
+      "required": false,
       "types": [
         {
-          "type": "annotation_expression",
-          "named": true
-        },
-        {
-          "type": "array_expression",
-          "named": true
-        },
-        {
-          "type": "array_write",
-          "named": true
-        },
-        {
           "type": "binary_expression",
-          "named": true
-        },
-        {
-          "type": "builtin_type",
           "named": true
         },
         {
@@ -1314,19 +1298,7 @@
           "named": true
         },
         {
-          "type": "dependent_type",
-          "named": true
-        },
-        {
-          "type": "do_expression",
-          "named": true
-        },
-        {
           "type": "eliminator",
-          "named": true
-        },
-        {
-          "type": "equality_expression",
           "named": true
         },
         {
@@ -1334,27 +1306,11 @@
           "named": true
         },
         {
-          "type": "hole",
-          "named": true
-        },
-        {
           "type": "identifier",
           "named": true
         },
         {
-          "type": "index_expression",
-          "named": true
-        },
-        {
           "type": "integer",
-          "named": true
-        },
-        {
-          "type": "kind_expression",
-          "named": true
-        },
-        {
-          "type": "lambda_expression",
           "named": true
         },
         {
@@ -1374,19 +1330,7 @@
           "named": true
         },
         {
-          "type": "quantity",
-          "named": true
-        },
-        {
-          "type": "reflexivity",
-          "named": true
-        },
-        {
           "type": "reusable_expression",
-          "named": true
-        },
-        {
-          "type": "rewrite_expression",
           "named": true
         },
         {
@@ -1395,10 +1339,6 @@
         },
         {
           "type": "tuple_expression",
-          "named": true
-        },
-        {
-          "type": "type_application",
           "named": true
         }
       ]
@@ -1713,23 +1653,7 @@
         "required": true,
         "types": [
           {
-            "type": "annotation_expression",
-            "named": true
-          },
-          {
-            "type": "array_expression",
-            "named": true
-          },
-          {
-            "type": "array_write",
-            "named": true
-          },
-          {
             "type": "binary_expression",
-            "named": true
-          },
-          {
-            "type": "builtin_type",
             "named": true
           },
           {
@@ -1745,19 +1669,7 @@
             "named": true
           },
           {
-            "type": "dependent_type",
-            "named": true
-          },
-          {
-            "type": "do_expression",
-            "named": true
-          },
-          {
             "type": "eliminator",
-            "named": true
-          },
-          {
-            "type": "equality_expression",
             "named": true
           },
           {
@@ -1765,27 +1677,11 @@
             "named": true
           },
           {
-            "type": "hole",
-            "named": true
-          },
-          {
             "type": "identifier",
             "named": true
           },
           {
-            "type": "index_expression",
-            "named": true
-          },
-          {
             "type": "integer",
-            "named": true
-          },
-          {
-            "type": "kind_expression",
-            "named": true
-          },
-          {
-            "type": "lambda_expression",
             "named": true
           },
           {
@@ -1805,19 +1701,7 @@
             "named": true
           },
           {
-            "type": "quantity",
-            "named": true
-          },
-          {
-            "type": "reflexivity",
-            "named": true
-          },
-          {
             "type": "reusable_expression",
-            "named": true
-          },
-          {
-            "type": "rewrite_expression",
             "named": true
           },
           {
@@ -1826,10 +1710,6 @@
           },
           {
             "type": "tuple_expression",
-            "named": true
-          },
-          {
-            "type": "type_application",
             "named": true
           }
         ]
@@ -6962,7 +6842,7 @@
     },
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
         {
           "type": "annotation_expression",

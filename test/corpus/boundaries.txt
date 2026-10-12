@@ -1,4 +1,29 @@
 ==================
+Arm-free eliminator identity in a case pattern
+==================
+def probe(n: U32) -> U32:
+  match n:
+    case \{x}: x
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (identifier)))
+    (identifier)
+    (body
+      (match_expression
+        (identifier)
+        (case_clause
+          (eliminator
+            (identifier))
+          (body
+            (identifier)))))))
+
+==================
 Typed lets inside lambda bodies
 ==================
 def f() -> U32 -> U32:

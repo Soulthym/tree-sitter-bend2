@@ -20,6 +20,29 @@ for _, file in ipairs({ 'README.md', 'docs/neovim.md' }) do
   end
 end
 
+-- Compile and execute the published CST migration query, not a copied query.
+local readme = table.concat(vim.fn.readfile(root .. '/README.md'), '\n')
+local prose = readme:gsub('%s+', ' ')
+assert(not prose:find('no timeout exemptions or baseline additions', 1, true), 'misleading baseline-additions claim')
+assert(prose:find('The suite also includes negative tests beyond the official Bend examples.', 1, true), 'missing extra negative-test coverage statement')
+local migration = assert(readme:match('```query\n(.-)\n```'), 'missing natural CST migration query')
+vim.treesitter.language.add('bend2', { path = root .. '/build/bend2.so' })
+local query = vim.treesitter.query.parse('bend2', migration)
+for _, ending in ipairs({ '\n', '\r\n' }) do
+  local text = 'def probe() -> Nat: 1n+2n' .. ending
+  local node = vim.treesitter.get_string_parser(text, 'bend2'):parse()[1]:root()
+  assert(not node:has_error(), 'invalid migration example')
+  local captures = {}
+  for id, n in query:iter_captures(node, text, 0, -1) do
+    local name = query.captures[id]
+    assert(not captures[name], 'duplicated migration capture ' .. name)
+    captures[name] = vim.treesitter.get_node_text(n, text)
+    local first, last = text:find(captures[name], 1, true)
+    assert(select(3, n:start()) == first - 1 and select(3, n:end_()) == last, 'wrong migration capture range')
+  end
+  assert(vim.deep_equal(captures, { prefix = '1n', operator = '+', value = '2n' }), 'wrong migration targets')
+end
+
 -- Execute the documented main-branch configuration against a temporary runtime.
 -- No installer/plugin entrypoint is loaded; parser/queries come from this repo.
 local plugin = vim.env.BEND2_NVIM_TREESITTER or (vim.fn.stdpath('data') .. '/lazy/nvim-treesitter')

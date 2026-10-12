@@ -83,6 +83,140 @@ for _, case in ipairs({
     assert(rhs and vim.treesitter.get_node_text(rhs, text) == case[3], 'wrong right-operand ownership')
   end)
 end
+-- The compiler distinguishes Nat.add from glued successor syntax even when
+-- both trees are clean. Keep the operand roles under the type annotation.
+for _, case in ipairs({
+  { '1n + 2n', 'binary_expression' },
+  { '1n+2n', 'natural_successor' },
+}) do
+  for _, newline in ipairs({ '\n', '\r\n' }) do
+    local text = 'def probe() -> Nat: (' .. case[1] .. ' : Nat)' .. newline
+    check('annotated natural addition ' .. case[1] .. ' ' .. (newline == '\n' and 'LF' or 'CRLF'),
+      text, false, function(node, source)
+        local paren = node:named_child(0):field('body')[1]:named_child(0)
+        assert(paren:type() == 'parenthesized_expression', 'lost annotated natural expression')
+        local expression = paren:field('body')[1]:named_child(0)
+        assert(expression:type() == case[2], 'wrong natural addition classification')
+        assert(vim.treesitter.get_node_text(expression, source) == case[1], 'wrong natural addition extent')
+        if case[2] == 'binary_expression' then
+          assert(vim.treesitter.get_node_text(expression:field('operator')[1], source) == '+', 'lost addition operator')
+          assert(vim.treesitter.get_node_text(expression:field('left')[1], source) == '1n', 'lost left natural operand')
+          assert(vim.treesitter.get_node_text(expression:field('right')[1], source) == '2n', 'lost right natural operand')
+        else
+          assert(vim.treesitter.get_node_text(expression:field('value')[1], source) == '2n', 'lost successor value')
+        end
+      end)
+  end
+end
+-- Parallel arity counts whole expressions, not natural/operator fragments.
+for _, newline in ipairs({ '\n', '\r\n' }) do
+  local text = table.concat({
+    'def f(x: Nat) -> Nat:',
+    '  a b = 00n & (x) x',
+    '  a',
+    '',
+  }, newline)
+  check('parallel natural infix value ' .. (newline == '\n' and 'LF' or 'CRLF'),
+    text, false, function(node, source)
+      local parallel = node:named_child(0):field('body')[1]:named_child(0)
+      assert(parallel:type() == 'parallel_let_expression', 'lost parallel binding')
+      local values = parallel:field('value')
+      assert(#values == 2 and values[1]:type() == 'binary_expression'
+        and values[2]:type() == 'identifier', 'parallel value arity or ownership changed')
+      assert(vim.treesitter.get_node_text(values[1], source) == '00n & (x)', 'split natural infix value')
+      assert(vim.treesitter.get_node_text(values[1]:field('left')[1], source) == '00n', 'lost natural operand')
+      assert(vim.treesitter.get_node_text(values[1]:field('operator')[1], source) == '&', 'lost infix operator')
+      assert(vim.treesitter.get_node_text(values[1]:field('right')[1], source) == '(x)', 'lost parenthesized operand')
+      assert(vim.treesitter.get_node_text(values[2], source) == 'x', 'lost second parallel value')
+      assert(vim.treesitter.get_node_text(parallel:field('body')[1], source) == 'a', 'lost parallel continuation')
+    end)
+end
+-- parse_body consumes glued '&' after a natural literal as an ordinary
+-- binary operator, not as part of a pattern or quantity.
+for _, case in ipairs({
+  { '0n&1n', '0n', '1n', 'natural' },
+  { '1n&1n', '1n', '1n', 'natural' },
+  { '00n&1n', '00n', '1n', 'natural' },
+  { '0n&2', '0n', '2', 'integer' },
+  { '0n&0', '0n', '0', 'integer' },
+  { '0n &1n', '0n', '1n', 'natural' },
+  { '0n& 1n', '0n', '1n', 'natural' },
+  { '0n & 1n', '0n', '1n', 'natural' },
+}) do
+  for _, newline in ipairs({ '\n', '\r\n' }) do
+    local text = 'def probe():' .. newline .. '  ' .. case[1] .. newline
+    check('natural binary operands ' .. case[1] .. (newline == '\n' and ' LF' or ' CRLF'), text, false, function(node)
+      local body = node:named_child(0):field('body')[1]
+      local expr = body and body:named_child(0)
+      assert(expr and expr:type() == 'binary_expression', 'lost natural binary expression')
+      local left, operator, right = expr:field('left'), expr:field('operator'), expr:field('right')
+      assert(#left == 1 and left[1]:type() == 'natural'
+        and vim.treesitter.get_node_text(left[1], text) == case[2], 'wrong natural left operand')
+      assert(#operator == 1 and vim.treesitter.get_node_text(operator[1], text) == '&', 'wrong natural binary operator')
+      assert(#right == 1 and right[1]:type() == case[4]
+        and vim.treesitter.get_node_text(right[1], text) == case[3], 'wrong natural binary right operand')
+      assert(vim.treesitter.get_node_text(body, text) == case[1], 'natural binary body lost source ownership')
+    end)
+  end
+end
+-- Scanner lookahead must stop the public body field at the natural literal;
+-- trailing extras belong outside the body and its editor captures.
+for _, expression in ipairs({ '0n', '00n', '1n+p' }) do
+  for _, newline in ipairs({ '\n', '\r\n' }) do
+    local text = ('def boundary() -> Nat:\n  ' .. expression
+      .. '\n# unrelated trailing comment\ndef after() -> U32: 42\n'):gsub('\n', newline)
+    check('natural trailing comment boundary ' .. expression .. (newline == '\n' and ' LF' or ' CRLF'),
+      text, false, function(node)
+        local def = node:named_child(0)
+        local body = def:field('body')[1]
+        local first = assert(text:find(expression, #('def boundary() -> Nat:'), true))
+        local last = first + #expression - 1
+        local _, _, a = body:start()
+        local _, _, b = body:end_()
+        assert(a == first - 1 and b == last
+          and vim.treesitter.get_node_text(body, text) == expression, 'natural body absorbed trailing extras')
+        for file, capture_name in pairs({ context = 'context.end', textobjects = 'function.inner' }) do
+          local query = vim.treesitter.query.parse('bend2', table.concat(vim.fn.readfile('queries/' .. file .. '.scm'), '\n'))
+          local found = false
+          for id, capture in query:iter_captures(def, text, 0, -1) do
+            if query.captures[id] == capture_name then
+              local _, _, start_byte = capture:start()
+              local _, _, end_byte = capture:end_()
+              if start_byte == first - 1 and end_byte == last then found = true end
+            end
+          end
+          assert(found, 'lost exact natural boundary @' .. capture_name)
+        end
+      end)
+  end
+end
+for _, case in ipairs({
+  { '0n()', 'call_expression', 'function' },
+  { '0n[0]', 'index_expression', 'array' },
+}) do
+  for _, newline in ipairs({ '\n', '\r\n' }) do
+    local text = 'def probe():' .. newline .. '  ' .. case[1] .. newline
+    check('natural postfix ownership ' .. case[1] .. (newline == '\n' and ' LF' or ' CRLF'),
+      text, false, function(node)
+        local body = node:named_child(0):field('body')[1]
+        local expr = body:named_child(0)
+        assert(expr:type() == case[2], 'lost natural postfix expression')
+        local head = expr:field(case[3])
+        assert(#head == 1 and head[1]:type() == 'natural'
+          and vim.treesitter.get_node_text(head[1], text) == '0n', 'wrong natural postfix operand')
+        if case[2] == 'call_expression' then
+          local arguments = expr:field('arguments')
+          assert(#arguments == 1 and #arguments[1]:field('argument') == 0
+            and vim.treesitter.get_node_text(arguments[1], text) == '()', 'wrong natural empty-call arguments')
+        else
+          local index = expr:field('index')
+          assert(#index == 1 and index[1]:type() == 'integer'
+            and vim.treesitter.get_node_text(index[1], text) == '0', 'wrong natural index operand')
+        end
+        assert(vim.treesitter.get_node_text(body, text) == case[1], 'natural postfix lost body ownership')
+      end)
+  end
+end
 -- Verified with Bend.parse_term: these are interpreted as attempted family
 -- applications, not chained numeric comparisons (the family head is invalid).
 for _, expression in ipairs({ '1<2 > 3', '1<2 >= 3' }) do
