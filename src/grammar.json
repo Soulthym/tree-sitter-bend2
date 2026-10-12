@@ -8801,6 +8801,15 @@
                 {
                   "type": "SYMBOL",
                   "name": "reusable_expression"
+                },
+                {
+                  "type": "ALIAS",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "_name_parenthesized"
+                  },
+                  "named": true,
+                  "value": "parenthesized_expression"
                 }
               ]
             }

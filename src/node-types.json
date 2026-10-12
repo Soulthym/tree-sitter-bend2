@@ -4485,6 +4485,10 @@
             "named": true
           },
           {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
             "type": "reusable_expression",
             "named": true
           }
