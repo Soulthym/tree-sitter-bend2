@@ -1,6 +1,6 @@
 LANGUAGE_NAME := tree-sitter-bend2
 HOMEPAGE_URL := https://github.com/soulthym/tree-sitter-bend2
-VERSION := 0.2.0
+VERSION := 0.3.0
 
 # repository
 SRC_DIR := src

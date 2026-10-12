@@ -6,7 +6,7 @@
 - Target: **v2.0.36**, `ae1101ca7d15364f9274fa6b1367d175884a7da7`.
 - Official release: <https://github.com/bendlang/bend/releases/tag/v2.0.36>.
 - Comparison: <https://github.com/bendlang/bend/compare/v2.0.35...v2.0.36>.
-- Parser package: **0.2.0**, still **ABI 15**. This source update does not publish
+- Parser package: **0.3.0**, still **ABI 15**. This source update does not publish
   packages or create release tags.
 - `bend2/base.bend`: **3,089 lines / 75,064 bytes**, SHA256
   `99ac43f2b2bb3e3f39acdcedcecbbd3cb44749ce13969c827d6973fa66f7facf`.

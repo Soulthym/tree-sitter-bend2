@@ -4,7 +4,7 @@ Tree-sitter grammar for **Bend 2**, with Neovim highlighting, folding,
 indentation, textobjects, locals, symbol tags and treesitter-context queries.
 This is **not** the older Bend/HVM language grammar.
 
-Parser version: **0.2.0** (ABI 15).
+Parser version: **0.3.0** (ABI 15).
 Syntax reference: Bend **2.0.36**, release tag **`v2.0.36`**, specifically
 [`bend2/bend.ts` at `ae1101ca`](https://github.com/bendlang/bend/blob/ae1101ca7d15364f9274fa6b1367d175884a7da7/bend2/bend.ts).
 See the [release audit](docs/upgrades/bend-2.0.36.md) for every upstream change,

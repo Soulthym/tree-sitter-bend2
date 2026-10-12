@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0
+
 Bend reference: **v2.0.36**, `ae1101ca7d15364f9274fa6b1367d175884a7da7`.
 ABI remains 15; no package publication or tag is performed by this source update.
 

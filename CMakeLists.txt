@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 project(tree-sitter-bend2
-        VERSION "0.2.0"
+        VERSION "0.3.0"
         DESCRIPTION "Bend2 tree-sitter-parser"
         HOMEPAGE_URL "https://github.com/soulthym/tree-sitter-bend2"
         LANGUAGES C)
