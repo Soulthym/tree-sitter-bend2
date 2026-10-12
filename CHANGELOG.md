@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+Bend reference: **v2.0.36**, `ae1101ca7d15364f9274fa6b1367d175884a7da7`.
+ABI remains 15; no package publication or tag is performed by this source update.
+
+- Audit all 50 upstream commits since v2.0.35; update the reference/stdlib hashes
+  and sweep all 1,685 sources: 1,563 clean, the same 122 reviewed rejections,
+  and zero rejected non-diagnostic fixtures. No new rejection exemption.
+- Support annotated named lambda binders via the existing parenthesized node
+  and retain parameter highlights/local definitions. The public parameter
+  schema widens additively; previously clean trees/captures remain unchanged.
+- Complete existing ancestor match scopes before a real dedented sibling case,
+  fixing valid three-level nested matches without new scanner state or relaxing
+  recovery's all-valid entry guard. Add 36 exact-string variants/216 edits and
+  LF/CRLF scanner regressions. Native v2.0.35 also accepts these witnesses.
+- Record the approximately 11.2% compiled-library increase and preserve the
+  documented deferred recovery failures; the strict offline gate remains red.
+
 - Upgrade the Go runtime binding to `go-tree-sitter v0.25.0` for ABI 15 and
   require Go 1.23+. Commit module checksums and test actual parser loading plus
   valid source parsing; the old language-object-only test missed incompatibility.

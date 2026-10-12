@@ -5,9 +5,9 @@ indentation, textobjects, locals, symbol tags and treesitter-context queries.
 This is **not** the older Bend/HVM language grammar.
 
 Parser version: **0.2.0** (ABI 15).
-Syntax reference: Bend **2.0.35**, release tag **`v2.0.35`**, specifically
-[`bend2/bend.ts` at `79df8d9c`](https://github.com/bendlang/bend/blob/79df8d9c40722ee9507a1e253f283b51025f9d6c/bend2/bend.ts).
-See the [release audit](docs/upgrades/bend-2.0.35.md) for every upstream change,
+Syntax reference: Bend **2.0.36**, release tag **`v2.0.36`**, specifically
+[`bend2/bend.ts` at `ae1101ca`](https://github.com/bendlang/bend/blob/ae1101ca7d15364f9274fa6b1367d175884a7da7/bend2/bend.ts).
+See the [release audit](docs/upgrades/bend-2.0.36.md) for every upstream change,
 old/new parser results, and the distinction between this tag and later `main`.
 
 ## Installation
@@ -26,7 +26,8 @@ Node is needed for the upstream sweep; Neovim is needed for editor tests.
 The upstream sweep expects the Bend checkout in a sibling directory named
 `bend` (`../bend` relative to this repository). You can pass a different checkout
 path to `scripts/validate-upstream.mjs`. Corpus and Neovim tests do not require
-the Bend checkout.
+the Bend checkout. `npm run test:upgrade` additionally reads the v2.0.36
+witnesses from that pinned checkout (or `BEND2_UPSTREAM`).
 
 These commands use installed tools; no npm installation is necessary:
 
@@ -58,14 +59,17 @@ and parses a valid program, rather than only constructing a language object.
 
 On the integrated parser, using the existing 10-second per-file deadline:
 
-- **1,644 / 1,644 `.bend` files visited**, with a per-file timeout.
-- **1,522 clean parse results**, including the entire 3,009-line standard library,
+- **1,685 / 1,685 `.bend` files visited**, with a per-file timeout.
+- **1,563 clean parse results**, including the entire 3,089-line standard library,
   all demos and the completed non-diagnostic fixtures.
 - **122 reviewed syntax rejections**, pinned in `test/upstream-rejections.json`. These contain
   malformed or removed syntax. Some upstream goldens stop at an *earlier*
   semantic error, so “expects an error” alone is not used as an exemption.
 - **42 corpus cases**, covering tree shape, precedence, column ownership,
   literals, proofs, do notation, templates, parallel lets, arrays and rejection.
+  The release upgrade also retains 85 existing compatibility checks and adds
+  36 exact-EOF/LF/CRLF annotated-lambda and nested-match ownership vectors with
+  216 raw tree edits and all seven capture sets.
 - All seven queries compile in Neovim **0.12.1**; captures, folds, conventional
   indentation and **180 deterministic incremental edits** are checked.
 - **124 declaration-recovery scenarios** check error locality and retained
@@ -262,6 +266,23 @@ absorbed into an error region, and complicated combinations can also affect
 following declarations. Five such probes verify repair and incremental
 consistency, not highlight preservation for those arms. Fixing the original
 syntax error restores the complete tree.
+
+### v2.0.36 compatibility and CST addition
+
+The native parser changes no tokens or term grammar in this release. Its
+statement-write disambiguation fix is already covered by our Array.set and
+parenthesized-write row tests. New upstream witnesses also exposed two existing
+valid-syntax gaps, accepted by both native versions: `(x: Nat) => x` and a
+three-level nested match followed by an outer sibling case. Both now parse with
+the correct binder/body and nearest-match owners.
+
+`lambda_expression.parameter` additionally admits `parenthesized_expression`;
+its existing `body` and optional `type` fields retain the binder and annotation.
+Highlight/local-definition captures cover direct named/reusable annotated
+binders. Previously clean CSTs/captures across both tagged corpora are unchanged.
+No scanner state or serialization format was added. The same-build library is
+about **11.2% larger** than the merged PR#2 baseline. This is separate from the
+historical successor-change cost below; no speed guarantee is claimed.
 
 ### Successor/GPU recovery scope and cost
 
