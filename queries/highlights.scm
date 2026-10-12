@@ -31,6 +31,8 @@
 (dependent_type name: (identifier) @variable.parameter)
 (lambda_expression parameter: (identifier) @variable.parameter)
 (lambda_expression parameter: (reusable_expression (identifier) @variable.parameter))
+(lambda_expression parameter: (parenthesized_expression body: (body (identifier) @variable.parameter)))
+(lambda_expression parameter: (parenthesized_expression body: (body (reusable_expression (identifier) @variable.parameter))))
 (do_binding name: (identifier) @variable)
 (import_statement alias: (module_alias) @module)
 (import_path) @string.special.path

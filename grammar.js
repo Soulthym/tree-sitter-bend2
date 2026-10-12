@@ -313,7 +313,7 @@ export default grammar({
     array_write: $ => prec.right(1, seq(field('target', $.index_expression), '<-', field('value', $._write_value))),
     binary_expression: $ => binary($, $._expression, 0),
     reusable_expression: $ => prec(12, seq('+', $._expression)),
-    lambda_expression: $ => prec.right(-2, seq(field('parameter', choice($.identifier, $.reusable_expression)), '=>', field('body', seq($._lambda_start, $._body_entry, choice(alias($._lambda_body, $.body), seq($.body, $._lambda_end)))))),
+    lambda_expression: $ => prec.right(-2, seq(field('parameter', choice($.identifier, $.reusable_expression, alias($._name_parenthesized, $.parenthesized_expression))), '=>', field('body', seq($._lambda_start, $._body_entry, choice(alias($._lambda_body, $.body), seq($.body, $._lambda_end)))))),
     dependent_type: $ => prec.right(0, seq(choice(seq(alias($._at, '@'), optional(choice('+', '-'))), '&'),
       field('name', $.identifier), ':', field('domain', $._domain_expression), '->', field('codomain', $._expression))),
     annotation_expression: $ => seq('{', field('value', $._expression), ':', field('type', $._expression), '}'),
