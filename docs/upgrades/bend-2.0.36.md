@@ -106,6 +106,31 @@ admitted bare-lambda counterpart does on the baseline. This update neither
 redesigns that deferred recovery family nor weakens its tests.
 The CI PR remains postponed on its own branch and its policy was not changed.
 
+## Reproduction
+
+Use the exact tagged checkout named in `test/bend-reference.json`. Generation
+uses tree-sitter-cli 0.26.9, ABI 15; no parser-table hand edits are needed.
+Set output/cache/log/TMPDIR destinations privately before running:
+
+```sh
+export BEND2_UPSTREAM=/absolute/path/to/bend-v2.0.36
+npm run generate
+npm test
+npm run test:scanner
+npm run test:upgrade
+npm run test:syntax
+npm run test:stdlib
+npm run test:upstream
+npm run test:release
+npm run test:offline
+```
+
+`npm run test:upgrade` now includes `scripts/test-bend-2.0.36.lua`, which reads
+the two full official witnesses from `BEND2_UPSTREAM` (default `../bend`). The
+existing `test-upgrade.lua` still needs no upstream source on its own.
+`BEND2_PARSER` selects a private library; `BEND2_REPORT` optionally saves the
+new regression's full source/CST/captures/edit results.
+
 ## Complete upstream commit scope ledger
 
 “Outside source syntax” does not mean untested native behavior was executed;
